@@ -1,0 +1,185 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+    encoding:
+      charset: UTF-8
+      force: true
+  compression:
+    enabled: true
+    mime-types: application/json,text/html,text/css,application/javascript
+  tomcat:
+    max-swallow-size: -1
+
+spring:
+  application:
+    name: kms
+
+  # 默认激活 local profile，从 application-local.yml 读取本机配置（主要是各类密钥）。
+  # 该文件被 .gitignore 忽略，缺失时 Spring 只会跳过、不报错，
+  # 因此换一台机器部署时即使没有这个文件，系统也能以默认配置启动。
+  profiles:
+    active: ${KMS_PROFILE:local}
+
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # 注意：characterEncoding 需填 Java 字符集名（UTF-8），
+    # Connector/J 8 会自动协商为服务端的 utf8mb4，从而支持完整的 Unicode（含 emoji）。
+    url: jdbc:mysql://localhost:3306/kms?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true&allowMultiQueries=true
+    username: ${KMS_DB_USERNAME:root}
+    password: ${KMS_DB_PASSWORD:}
+    hikari:
+      pool-name: KmsHikariPool
+      minimum-idle: 5
+      maximum-pool-size: 20
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: false
+        jdbc:
+          batch_size: 50
+          time_zone: Asia/Shanghai
+    show-sql: false
+
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 300MB
+      max-request-size: 600MB
+      file-size-threshold: 2MB
+
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+      fail-on-empty-beans: false
+
+  threads:
+    virtual:
+      enabled: false
+
+# ---------------------------------------------------------------------
+# 应用自定义配置
+# ---------------------------------------------------------------------
+kms:
+  # ---- JWT 认证 ----
+  jwt:
+    # 生产环境请通过环境变量 KMS_JWT_SECRET 覆盖（HS256 要求 ≥ 32 字节）
+    secret: ${KMS_JWT_SECRET:kms-njupt-course-design-2026-secret-key-please-change-in-production}
+    expire-minutes: 720
+    issuer: njupt-kms
+
+  # ---- 文件存储 ----
+  storage:
+    # 上传文件根目录（相对后端进程工作目录）
+    root: ${KMS_STORAGE_ROOT:../storage}
+    # 允许上传的扩展名，按媒体类型分组
+    allowed-extensions:
+      DOCUMENT: pdf,doc,docx,ppt,pptx,xls,xlsx,txt,md,csv,json,xml
+      IMAGE: png,jpg,jpeg,gif,bmp,webp,svg
+      VIDEO: mp4,webm,mov,avi,mkv
+      AUDIO: mp3,wav,m4a,aac,ogg
+    max-file-size-mb: 300
+
+  # ---- 全文检索 ----
+  search:
+    # 单次返回的最大结果数
+    max-page-size: 100
+    # 摘要片段长度（字符）
+    snippet-length: 200
+    # 检索结果高亮标签
+    highlight-prefix: "<mark>"
+    highlight-suffix: "</mark>"
+    # 热搜词统计窗口（天）
+    hot-keyword-window-days: 30
+
+  # ---- RAG 检索增强问答 ----
+  rag:
+    enabled: true
+    # 文本分块：目标长度与重叠长度（字符）
+    chunk-size: 420
+    chunk-overlap: 80
+    # 送入大模型的最终上下文块数
+    top-k: 6
+    # 各召回通道的候选数
+    vector-top-k: 20
+    keyword-top-k: 20
+    # 倒数排名融合（RRF）常数
+    rrf-k: 60
+    # 是否用本体做查询扩展（把命中概念的关联概念加入检索）
+    ontology-expansion: true
+    ontology-expand-limit: 6
+    # 会话中携带的历史轮数
+    history-rounds: 3
+
+    # 向量模型：local（离线哈希向量，零依赖）/ openai（OpenAI 兼容 /embeddings）
+    embedding:
+      provider: ${KMS_EMBEDDING_PROVIDER:local}
+      local:
+        dim: 512
+        # 字符 n-gram 的 n 值（中文场景 1~2 效果较好）
+        ngram-min: 1
+        ngram-max: 2
+      openai:
+        base-url: ${KMS_EMBEDDING_BASE_URL:https://api.siliconflow.cn/v1}
+        api-key: ${KMS_EMBEDDING_API_KEY:}
+        model: ${KMS_EMBEDDING_MODEL:BAAI/bge-m3}
+        batch-size: 16
+        timeout-seconds: 60
+
+    # 生成模型：none（离线抽取式作答）/ openai（OpenAI 兼容 /chat/completions）
+    chat:
+      provider: ${KMS_CHAT_PROVIDER:openai}
+      openai:
+        base-url: ${KMS_CHAT_BASE_URL:https://api.deepseek.com/v1}
+        api-key: ${KMS_CHAT_API_KEY:}
+        model: ${KMS_CHAT_MODEL:deepseek-flash}
+        temperature: 0.2
+        # 推理类模型的思考过程与答案**共同**占用这个额度，设小了会出现"只想了没答"。
+        # 按实际用量计费，留大不会额外花钱。
+        max-tokens: 4000
+        timeout-seconds: 120
+      # 无 API Key 时自动降级为离线抽取式回答
+      fallback-on-error: true
+
+  # ---- CMS 版本管理默认策略（可被 cms_version_policy 表覆盖）----
+  version:
+    default-interval-days: 1
+    default-min-change-count: 5
+    default-max-versions: 50
+    auto-snapshot-enabled: true
+
+  # ---- 初始化 ----
+  bootstrap:
+    # 首次启动自动导入本体与演示数据（表为空时才执行）
+    seed-demo-data: true
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
+
+logging:
+  charset:
+    # 显式指定日志编码，避免中文日志在 Windows 控制台默认代码页下变成乱码
+    console: UTF-8
+    file: UTF-8
+  level:
+    root: INFO
+    cn.edu.njupt.kms: DEBUG
+    org.hibernate.SQL: WARN
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %clr(%-5level) %clr(%-40.40logger{39}){cyan} : %msg%n"

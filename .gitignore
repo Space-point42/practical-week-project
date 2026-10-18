@@ -1,0 +1,48 @@
+# ---- 构建产物 ----
+target/
+dist/
+*.jar
+*.war
+
+# ---- 依赖 ----
+node_modules/
+.pnpm-store/
+
+# ---- 运行时数据 ----
+# 上传的文件属于运行时数据，不入库管理
+storage/*
+!storage/.gitkeep
+*.log
+logs/
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/
+*.swp
+.DS_Store
+
+# ---- 本地配置覆盖 ----
+# 若把数据库口令写进本地配置，请放在这些文件里，不要提交
+application-local.yml
+application-local.properties
+.env
+.env.local
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# ---- 测试产物 ----
+ui_check.mjs
+playwright-report/
+test-results/
+.coverage/
+
+# ---- 临时 / 备份文件 ----
+# 报告生成过程中若目标文件被占用，脚本会改写到带 _vN 后缀的备选文件名
+docs/专业课程设计II报告_*_v*.docx
+*.tmp
+*.bak
+~$*
